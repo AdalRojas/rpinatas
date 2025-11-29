@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "704805194188",
+    "project_id": "r-pinatas",
+    "storage_bucket": "r-pinatas.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:704805194188:android:44112d52a4bc9e04ffb569",
+        "android_client_info": {
+          "package_name": "com.example.r_pinatas"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUoFRDQzx6_O5Zqchx78H15qdr9itc_cU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
