@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // NECESARIO PARA GUARDAR
 import 'package:firebase_auth/firebase_auth.dart'; // NECESARIO PARA SABER QUIEN COMPRA
 import '../providers/cart_provider.dart';
+import 'payment_screen.dart';
 
 class CartScreen extends StatefulWidget {
   @override
@@ -73,6 +74,13 @@ class _CartScreenState extends State<CartScreen> {
                 onPressed: () {
                   Navigator.pop(context); // Cierra dialogo
                   Navigator.pop(context); // Regresa al Home
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          PaymentScreen(totalAmount: cart.totalAmount),
+                    ),
+                  );
                 },
                 child: Text("Entendido"),
               ),
