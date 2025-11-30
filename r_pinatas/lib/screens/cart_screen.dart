@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // NECESARIO PARA GUARDAR
-import 'package:firebase_auth/firebase_auth.dart'; // NECESARIO PARA SABER QUIEN COMPRA
+import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/cart_provider.dart';
 import 'payment_screen.dart';
 
@@ -11,97 +10,24 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  bool _isProcessing = false;
+  // ELIMINAMOS _isProcessing Y _processOrder PORQUE YA NO SE USAN AQUÍ
 
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
     final products = cart.productDetails;
 
-    // Función para guardar el pedido en Firebase
-    Future<void> _processOrder() async {
-      final user = FirebaseAuth.instance.currentUser;
-
-      if (user == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: No identificado")));
-        return;
-      }
-
-      setState(() => _isProcessing = true);
-
-      try {
-        // 1. Preparar los datos de los items
-        final List<Map<String, dynamic>> orderItems = [];
-        cart.items.forEach((productId, quantity) {
-          final product = products[productId]!;
-          orderItems.add({
-            'productId': productId,
-            'name': product.name,
-            'price': product.price,
-            'quantity': quantity,
-            'image': product.images.isNotEmpty ? product.images[0] : '',
-          });
-        });
-
-        // 2. Crear el objeto del pedido
-        final orderData = {
-          'userId': user.uid,
-          'userEmail': user.email,
-          'totalAmount': cart.totalAmount,
-          'status': 'Pendiente', // RF-03.4 Estado inicial
-          'createdAt': FieldValue.serverTimestamp(),
-          'items': orderItems,
-        };
-
-        // 3. Guardar en Firestore (Colección 'orders')
-        await FirebaseFirestore.instance.collection('orders').add(orderData);
-
-        // 4. Limpiar carrito y éxito
-        cart.clearCart();
-
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            icon: Icon(Icons.check_circle, color: Colors.green, size: 60),
-            title: Text("¡Pedido Recibido!"),
-            content: Text("Tu compra ha sido registrada correctamente."),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Cierra dialogo
-                  Navigator.pop(context); // Regresa al Home
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          PaymentScreen(totalAmount: cart.totalAmount),
-                    ),
-                  );
-                },
-                child: Text("Entendido"),
-              ),
-            ],
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error al procesar: $e")));
-      } finally {
-        if (mounted) setState(() => _isProcessing = false);
-      }
-    }
-
     return Scaffold(
       appBar: AppBar(
-        title: Text("Mi Carrito", style: TextStyle(color: Colors.black)),
+        title: const Text("Mi Carrito"),
         backgroundColor: Colors.white,
         elevation: 0,
-        iconTheme: IconThemeData(color: Colors.black),
+        titleTextStyle: const TextStyle(
+          color: Colors.black,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: cart.items.isEmpty
           ? Center(
@@ -113,8 +39,8 @@ class _CartScreenState extends State<CartScreen> {
                     size: 80,
                     color: Colors.grey[300],
                   ),
-                  SizedBox(height: 20),
-                  Text(
+                  const SizedBox(height: 20),
+                  const Text(
                     "Tu carrito está vacío",
                     style: TextStyle(fontSize: 18, color: Colors.grey),
                   ),
@@ -125,19 +51,27 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 Expanded(
                   child: ListView.builder(
-                    padding: EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(16),
                     itemCount: cart.items.length,
                     itemBuilder: (ctx, i) {
                       String productId = cart.items.keys.elementAt(i);
                       int quantity = cart.items.values.elementAt(i);
+
+                      if (!products.containsKey(productId))
+                        return const SizedBox();
                       var product = products[productId]!;
 
                       return Card(
-                        margin: EdgeInsets.only(bottom: 16),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: ListTile(
+                          contentPadding: const EdgeInsets.all(8),
                           leading: Container(
-                            width: 50,
-                            height: 50,
+                            width: 60,
+                            height: 60,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
                               image: DecorationImage(
@@ -151,8 +85,11 @@ class _CartScreenState extends State<CartScreen> {
                               color: Colors.grey[200],
                             ),
                           ),
-                          title: Text(product.name),
-                          subtitle: Text("${quantity} x \$${product.price}"),
+                          title: Text(
+                            product.name,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text("$quantity x \$${product.price}"),
                           trailing: IconButton(
                             icon: Icon(Icons.delete, color: Colors.red[300]),
                             onPressed: () => cart.removeSingleItem(productId),
@@ -162,17 +99,21 @@ class _CartScreenState extends State<CartScreen> {
                     },
                   ),
                 ),
+                // ZONA DE TOTAL Y BOTÓN
                 Container(
-                  padding: EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black12,
+                        color: Colors.black.withOpacity(0.05),
                         blurRadius: 10,
-                        offset: Offset(0, -5),
+                        offset: const Offset(0, -5),
                       ),
                     ],
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
                   ),
                   child: SafeArea(
                     child: Column(
@@ -181,10 +122,13 @@ class _CartScreenState extends State<CartScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text("Total:", style: TextStyle(fontSize: 18)),
+                            const Text(
+                              "Total:",
+                              style: TextStyle(fontSize: 18),
+                            ),
                             Text(
                               "\$${cart.totalAmount}",
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.pink,
@@ -192,24 +136,48 @@ class _CartScreenState extends State<CartScreen> {
                             ),
                           ],
                         ),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
                           height: 50,
                           child: ElevatedButton(
-                            onPressed: _isProcessing ? null : _processOrder,
+                            onPressed: () {
+                              // VALIDACIÓN DE SEGURIDAD
+                              if (FirebaseAuth.instance.currentUser == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "Debes iniciar sesión para comprar",
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              // NAVEGACIÓN PURA (Sin guardar nada todavía)
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PaymentScreen(
+                                    totalAmount: cart.totalAmount,
+                                  ),
+                                ),
+                              );
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.pink,
                               foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
-                            child: _isProcessing
-                                ? CircularProgressIndicator(color: Colors.white)
-                                : Text(
-                                    "CONFIRMAR COMPRA",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                            child: const Text(
+                              "PROCEDER AL PAGO",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
                           ),
                         ),
                       ],
