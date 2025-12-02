@@ -76,14 +76,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       // para usar los estilos por defecto de la nueva versión y evitar errores.
                       onCreditCardModelChange:
                           (CreditCardModel? creditCardModel) {
-                            setState(() {
-                              cardNumber = creditCardModel!.cardNumber;
-                              expiryDate = creditCardModel.expiryDate;
-                              cardHolderName = creditCardModel.cardHolderName;
-                              cvvCode = creditCardModel.cvvCode;
-                              isCvvFocused = creditCardModel.isCvvFocused;
-                            });
-                          },
+                        setState(() {
+                          cardNumber = creditCardModel!.cardNumber;
+                          expiryDate = creditCardModel.expiryDate;
+                          cardHolderName = creditCardModel.cardHolderName;
+                          cvvCode = creditCardModel.cvvCode;
+                          isCvvFocused = creditCardModel.isCvvFocused;
+                        });
+                      },
                     ),
 
                     const SizedBox(height: 20),
@@ -156,10 +156,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final products = cart.productDetails;
 
     try {
+      // INICIO DEL BATCH (Lote de operaciones)
+      // Usamos 'WriteBatch' para que todo ocurra al mismo tiempo o falle todo junto (Seguridad transaccional)
+      final batch = FirebaseFirestore.instance.batch();
+
       final List<Map<String, dynamic>> orderItems = [];
+
       cart.items.forEach((productId, quantity) {
         if (products.containsKey(productId)) {
           final product = products[productId]!;
+
+          // 1. Preparar datos del pedido
           orderItems.add({
             'productId': productId,
             'name': product.name,
@@ -167,23 +174,38 @@ class _PaymentScreenState extends State<PaymentScreen> {
             'quantity': quantity,
             'image': product.images.isNotEmpty ? product.images[0] : '',
           });
+
+          // 2. AGREGAR OPERACIÓN DE RESTA DE STOCK AL LOTE
+          // Buscamos la referencia del producto en la BD
+          final productRef =
+              FirebaseFirestore.instance.collection('products').doc(productId);
+
+          // Le decimos a Firebase: "Resta la cantidad que se compró"
+          batch.update(productRef, {
+            'stock': FieldValue.increment(
+                -quantity) // Magia de Firebase: decremento atómico
+          });
         }
       });
 
-      // Crear objeto de orden
+      // 3. Crear el documento del pedido
+      final orderRef = FirebaseFirestore.instance.collection('orders').doc();
       final orderData = {
         'userId': user!.uid,
         'userEmail': user.email,
         'totalAmount': widget.totalAmount,
-        'status': 'Pagado', // ¡YA ENTRA COMO PAGADO!
+        'status': 'Pagado',
         'paymentMethod':
             'Tarjeta ${cardNumber.length >= 4 ? cardNumber.substring(cardNumber.length - 4) : '****'}',
         'createdAt': FieldValue.serverTimestamp(),
         'items': orderItems,
       };
 
-      // Guardar en Firestore
-      await FirebaseFirestore.instance.collection('orders').add(orderData);
+      // Agregamos el guardado del pedido al lote
+      batch.set(orderRef, orderData);
+
+      // 4. EJECUTAR TODO EL LOTE (Commit)
+      await batch.commit();
 
       // Limpiar carrito
       cart.clearCart();
@@ -192,30 +214,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       // ÉXITO
       showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: Colors.green, size: 60),
-          title: const Text("¡Pago Exitoso!"),
-          content: const Text(
-            "Tu pedido ha sido confirmado y pagado correctamente.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Cierra diálogo
-                Navigator.pop(context); // Cierra pantalla pago
-                Navigator.pop(context); // Regresa al Home
-              },
-              child: const Text("Aceptar"),
-            ),
-          ],
-        ),
-      );
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+                icon: const Icon(Icons.check_circle,
+                    color: Colors.green, size: 60),
+                title: const Text("¡Pago Exitoso!"),
+                content: const Text(
+                    "Tu inventario se ha actualizado y el pedido ha sido registrado."),
+                actions: [
+                  TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      child: const Text("Aceptar"))
+                ],
+              ));
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
