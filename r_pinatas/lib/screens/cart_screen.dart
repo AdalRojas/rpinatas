@@ -1,49 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/cart_provider.dart';
-import 'payment_screen.dart';
+import '../services/auth_service.dart';
+import 'payment_screen.dart'; // <--- IMPORTANTE: Importar pantalla de pago
 
-class CartScreen extends StatefulWidget {
-  @override
-  _CartScreenState createState() => _CartScreenState();
-}
-
-class _CartScreenState extends State<CartScreen> {
-  // ELIMINAMOS _isProcessing Y _processOrder PORQUE YA NO SE USAN AQUÍ
-
+class CartScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<CartProvider>(context);
-    final products = cart.productDetails;
+    final items = cart.items;
+    final details = cart.productDetails;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Mi Carrito"),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        titleTextStyle: const TextStyle(
-          color: Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 20,
-        ),
-        iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      body: cart.items.isEmpty
+      appBar: AppBar(title: Text("Tu Carrito (${cart.totalItems})")),
+      body: items.isEmpty
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.shopping_cart_outlined,
-                    size: 80,
-                    color: Colors.grey[300],
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    "Tu carrito está vacío",
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
+                  Icon(Icons.shopping_cart_outlined,
+                      size: 100, color: Colors.grey[300]),
+                  SizedBox(height: 20),
+                  Text("El carrito está vacío",
+                      style: TextStyle(color: Colors.grey)),
                 ],
               ),
             )
@@ -51,139 +30,99 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: cart.items.length,
+                    itemCount: items.length,
                     itemBuilder: (ctx, i) {
-                      String productId = cart.items.keys.elementAt(i);
-                      int quantity = cart.items.values.elementAt(i);
+                      String productId = items.keys.elementAt(i);
+                      int quantity = items.values.elementAt(i);
+                      var product = details[productId];
 
-                      if (!products.containsKey(productId))
-                        return const SizedBox();
-                      var product = products[productId]!;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      return Dismissible(
+                        key: Key(productId),
+                        direction: DismissDirection.endToStart,
+                        onDismissed: (_) {
+                          cart.removeItem(productId);
+                        },
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: EdgeInsets.only(right: 20),
+                          child: Icon(Icons.delete, color: Colors.white),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(8),
-                          leading: Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              image: DecorationImage(
-                                image: NetworkImage(
-                                  product.images.isNotEmpty
-                                      ? product.images[0]
-                                      : '',
-                                ),
-                                fit: BoxFit.cover,
-                              ),
-                              color: Colors.grey[200],
+                        child: Card(
+                          margin:
+                              EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                          child: ListTile(
+                            leading: Container(
+                              width: 50,
+                              height: 50,
+                              child: product!.images.isNotEmpty
+                                  ? Image.network(product.images.first,
+                                      fit: BoxFit.cover)
+                                  : Icon(Icons.image),
                             ),
-                          ),
-                          title: Text(
-                            product.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text("$quantity x \$${product.price}"),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete, color: Colors.red[300]),
-                            onPressed: () => cart.removeSingleItem(productId),
+                            title: Text(product.name),
+                            subtitle: Text("\$${product.price} x $quantity"),
+                            trailing: Text(
+                              "\$${(product.price * quantity).toStringAsFixed(0)}",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ),
                       );
                     },
                   ),
                 ),
-                // ZONA DE TOTAL Y BOTÓN
                 Container(
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -5),
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, -5))
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Total:",
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold)),
+                          Text("\$${cart.totalAmount.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.pink,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      SizedBox(height: 15),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.pink),
+                          // --- AQUÍ ESTÁ EL CAMBIO ---
+                          onPressed: () {
+                            // En lugar de procesar, vamos a PAGAR
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => PaymentScreen()),
+                            );
+                          },
+                          // ---------------------------
+                          child: Text("Ir a Pagar",
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 18)),
+                        ),
                       ),
                     ],
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
                   ),
-                  child: SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "Total:",
-                              style: TextStyle(fontSize: 18),
-                            ),
-                            Text(
-                              "\$${cart.totalAmount}",
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.pink,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              // VALIDACIÓN DE SEGURIDAD
-                              if (FirebaseAuth.instance.currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      "Debes iniciar sesión para comprar",
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              // NAVEGACIÓN PURA (Sin guardar nada todavía)
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PaymentScreen(
-                                    totalAmount: cart.totalAmount,
-                                  ),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.pink,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const Text(
-                              "PROCEDER AL PAGO",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                )
               ],
             ),
     );

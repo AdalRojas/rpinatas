@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
-import '../providers/cart_provider.dart';
+import 'package:provider/provider.dart';
 import '../models/product_model.dart';
-import '../widgets/custom_image.dart';
+import '../providers/cart_provider.dart';
+import '../services/auth_service.dart';
 import 'product_detail_screen.dart';
-import 'admin_screen.dart';
 import 'cart_screen.dart';
 import 'orders_screen.dart';
-import 'admin_orders_screen.dart';
-import 'admin_dashboard_screen.dart';
+import 'admin_screen.dart';
+import 'admin_dashboard_screen.dart'; // <--- IMPORT NUEVO PARA PODER REGRESAR
+import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -19,459 +17,369 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Estado para el filtro
-  String _selectedCategory = 'Todas';
-  final List<String> _categories = [
-    'Todas',
-    'Piñatas',
-    'Dulces',
-    'Globos',
-    'Extras',
-  ];
+  String _searchQuery = "";
+  String? _selectedCategory;
+  bool _isAdmin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAdmin();
+  }
+
+  void _checkAdmin() async {
+    String role = await AuthService().getUserRole();
+    setState(() {
+      _isAdmin = (role == 'admin');
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cart = Provider.of<CartProvider>(context);
-    final user = FirebaseAuth.instance.currentUser;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
-
-      drawer: Drawer(
-        child: Column(
-          children: [
-            UserAccountsDrawerHeader(
-              decoration: const BoxDecoration(color: Colors.pink),
-              accountName: Text(user?.displayName ?? "Usuario"),
-              accountEmail: Text(user?.email ?? ""),
-              currentAccountPicture: const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Colors.pink),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.store),
-              title: const Text('Catálogo'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.shopping_bag),
-              title: const Text('Mis Pedidos'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => OrdersScreen()),
-                );
-              },
-            ),
-
-            // ZONA ADMIN
-            FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user?.uid)
-                  .get(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData || !snapshot.data!.exists)
-                  return const SizedBox();
-                final userData = snapshot.data!.data() as Map<String, dynamic>;
-                if (userData['role'] != 'admin') return const SizedBox();
-
-                return Column(
-                  children: [
-                    const Divider(),
-                    const Padding(
-                      padding: EdgeInsets.only(left: 16.0),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "ADMINISTRADOR",
-                          style: TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
+    return Consumer<CartProvider>(
+      builder: (context, cart, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: _isAdmin
+                ? Text("Modo Tienda (Admin)")
+                : Text("Catálogo R Piñatas"),
+            backgroundColor: _isAdmin
+                ? Colors.deepPurple
+                : Theme.of(context)
+                    .primaryColor, // Color diferente para que sepas que eres admin
+            actions: [
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.shopping_cart),
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => CartScreen())),
+                  ),
+                  if (cart.totalItems > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                            color: Colors.yellow,
+                            borderRadius: BorderRadius.circular(10)),
+                        constraints:
+                            BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text('${cart.totalItems}',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center),
                       ),
                     ),
-                    ListTile(
-                      leading: const Icon(
-                        Icons.dashboard,
-                        color: Colors.purple,
+                ],
+              ),
+            ],
+          ),
+          drawer: _buildDrawer(context),
+          body: Column(
+            children: [
+              // 1. BARRA DE BÚSQUEDA
+              Padding(
+                padding: EdgeInsets.all(12),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: "Buscar piñata...",
+                    prefixIcon: Icon(Icons.search),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                  ),
+                  onChanged: (val) =>
+                      setState(() => _searchQuery = val.toLowerCase()),
+                ),
+              ),
+
+              // 2. FILTROS
+              Container(
+                height: 50,
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('categories')
+                      .orderBy('name')
+                      .snapshots(),
+                  builder: (ctx, catSnap) {
+                    if (!catSnap.hasData) return SizedBox();
+                    final categories = catSnap.data!.docs;
+                    return ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      itemCount: categories.length + 1,
+                      itemBuilder: (ctx, i) {
+                        if (i == 0)
+                          return _buildCategoryChip(
+                              "Todos",
+                              _selectedCategory == null,
+                              () => setState(() => _selectedCategory = null));
+                        final doc = categories[i - 1];
+                        return _buildCategoryChip(
+                            doc['name'],
+                            _selectedCategory == doc.id,
+                            () => setState(() => _selectedCategory = doc.id));
+                      },
+                    );
+                  },
+                ),
+              ),
+
+              // 3. PRODUCTOS
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('products')
+                      .snapshots(),
+                  builder: (ctx, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      return Center(child: CircularProgressIndicator());
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
+                      return Center(child: Text("No hay productos"));
+
+                    final filteredDocs = snapshot.data!.docs.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final name =
+                          (data['name'] ?? '').toString().toLowerCase();
+                      final categoryId = data['categoryId'] ?? '';
+                      bool matchesSearch = name.contains(_searchQuery);
+                      bool matchesCategory = _selectedCategory == null ||
+                          categoryId == _selectedCategory;
+                      return matchesSearch && matchesCategory;
+                    }).toList();
+
+                    if (filteredDocs.isEmpty)
+                      return Center(
+                          child: Text("No se encontraron resultados"));
+
+                    return GridView.builder(
+                      padding: EdgeInsets.all(12),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        childAspectRatio: 0.7,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
-                      title: const Text('Dashboard del Negocio'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AdminDashboardScreen(),
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (ctx, i) {
+                        final data =
+                            filteredDocs[i].data() as Map<String, dynamic>;
+                        final product =
+                            Product.fromMap(data, filteredDocs[i].id);
+                        final bool isOutOfStock = product.stock <= 0;
+
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  // Pasamos el parámetro isAdmin correctamente
+                                  builder: (_) => ProductDetailScreen(
+                                      product: product, isAdmin: _isAdmin),
+                                ));
+                          },
+                          child: Card(
+                            elevation: 3,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15)),
+                            child: Stack(
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Container(
+                                        width: double.infinity,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.vertical(
+                                              top: Radius.circular(15)),
+                                          color: Colors.grey[200],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.vertical(
+                                              top: Radius.circular(15)),
+                                          child: ColorFiltered(
+                                            colorFilter: isOutOfStock
+                                                ? ColorFilter.mode(Colors.grey,
+                                                    BlendMode.saturation)
+                                                : ColorFilter.mode(
+                                                    Colors.transparent,
+                                                    BlendMode.multiply),
+                                            child: product.images.isNotEmpty
+                                                ? Image.network(
+                                                    product.images.first,
+                                                    fit: BoxFit.cover)
+                                                : Icon(Icons.image,
+                                                    color: Colors.grey),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: EdgeInsets.all(10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(product.name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold)),
+                                          Text(
+                                              "\$${product.price.toStringAsFixed(0)}",
+                                              style: TextStyle(
+                                                  color: Theme.of(context)
+                                                      .primaryColor,
+                                                  fontWeight: FontWeight.bold)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (isOutOfStock)
+                                  Container(
+                                    decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.7),
+                                        borderRadius:
+                                            BorderRadius.circular(15)),
+                                    child: Center(
+                                      child: Transform.rotate(
+                                        angle: -0.2,
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 5),
+                                          decoration: BoxDecoration(
+                                              border: Border.all(
+                                                  color: Colors.red, width: 2),
+                                              borderRadius:
+                                                  BorderRadius.circular(5)),
+                                          child: Text("AGOTADO",
+                                              style: TextStyle(
+                                                  color: Colors.red,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16)),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                if (_isAdmin)
+                                  Positioned(
+                                    right: 5,
+                                    top: 5,
+                                    child: CircleAvatar(
+                                      backgroundColor: Colors.white,
+                                      radius: 18,
+                                      child: IconButton(
+                                        icon: Icon(Icons.edit,
+                                            size: 18, color: Colors.blue),
+                                        onPressed: () {
+                                          Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => AdminScreen(
+                                                    productToEdit: product),
+                                              ));
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         );
                       },
-                    ),
-                  ],
-                );
-              },
-            ),
-
-            const Spacer(),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.exit_to_app, color: Colors.red),
-              title: const Text('Cerrar Sesión'),
-              onTap: () => AuthService().signOut(),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
-        title: const Text(
-          "R Piñatas",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        actions: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart_outlined),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => CartScreen()),
-                ),
-              ),
-              if (cart.totalItems > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.pink,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '${cart.totalItems}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 10),
-        ],
-      ),
-
-      body: Column(
-        children: [
-          // --- BARRA DE FILTROS ---
-          Container(
-            height: 60,
-            color: Colors.white,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              itemCount: _categories.length,
-              itemBuilder: (ctx, i) {
-                final cat = _categories[i];
-                final isSelected = _selectedCategory == cat;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: FilterChip(
-                    label: Text(cat),
-                    selected: isSelected,
-                    selectedColor: Colors.pink,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black,
-                    ),
-                    checkmarkColor: Colors.white,
-                    backgroundColor: Colors.grey[200],
-                    side: BorderSide.none,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    onSelected: (bool selected) {
-                      setState(() {
-                        _selectedCategory = cat;
-                      });
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-
-          // --- LISTA DE PRODUCTOS ---
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              // CONSULTA INTELIGENTE: Si es "Todas", trae todo. Si no, filtra.
-              stream: _selectedCategory == 'Todas'
-                  ? FirebaseFirestore.instance
-                        .collection('products')
-                        .snapshots()
-                  : FirebaseFirestore.instance
-                        .collection('products')
-                        .where('categoryId', isEqualTo: _selectedCategory)
-                        .snapshots(),
-              builder: (ctx, productSnap) {
-                if (productSnap.connectionState == ConnectionState.waiting)
-                  return const Center(child: CircularProgressIndicator());
-
-                // Obtener Rol
-                return FutureBuilder<DocumentSnapshot>(
-                  future: FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(user?.uid)
-                      .get(),
-                  builder: (context, userSnap) {
-                    bool isAdmin = false;
-                    if (userSnap.hasData && userSnap.data!.exists) {
-                      final userData =
-                          userSnap.data!.data() as Map<String, dynamic>;
-                      isAdmin = userData['role'] == 'admin';
-                    }
-
-                    List<Product> products = [];
-                    if (productSnap.hasData &&
-                        productSnap.data!.docs.isNotEmpty) {
-                      products = productSnap.data!.docs
-                          .map(
-                            (doc) => Product.fromMap(
-                              doc.data() as Map<String, dynamic>,
-                              doc.id,
-                            ),
-                          )
-                          .toList();
-                    }
-
-                    if (products.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 60,
-                              color: Colors.grey[300],
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              "No hay productos en '$_selectedCategory'",
-                              style: const TextStyle(color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            childAspectRatio: 0.70,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                          ),
-                      itemCount: products.length,
-                      itemBuilder: (ctx, i) =>
-                          _ProductCard(product: products[i], isAdmin: isAdmin),
                     );
                   },
-                );
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoryChip(String label, bool isSelected, VoidCallback onTap) {
+    return Padding(
+      padding: EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => onTap(),
+        selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+        checkmarkColor: Theme.of(context).primaryColor,
+        labelStyle: TextStyle(
+            color: isSelected ? Theme.of(context).primaryColor : Colors.black),
+      ),
+    );
+  }
+
+  // --- DRAWER ACTUALIZADO CON BOTÓN DE REGRESO ---
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(
+                color: _isAdmin
+                    ? Colors.deepPurple
+                    : Theme.of(context).primaryColor),
+            accountName: Text(_isAdmin ? "Administrador" : "Cliente R Piñatas"),
+            accountEmail: Text(AuthService().currentUser?.email ?? ""),
+            currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person,
+                    color: _isAdmin
+                        ? Colors.deepPurple
+                        : Theme.of(context).primaryColor)),
+          ),
+
+          // --- BOTÓN EXCLUSIVO PARA ADMIN: VOLVER AL DASHBOARD ---
+          if (_isAdmin)
+            ListTile(
+              leading: Icon(Icons.dashboard, color: Colors.deepPurple),
+              title: Text('Volver al Dashboard',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+              onTap: () {
+                Navigator.pop(context); // Cerrar drawer
+                // Regresar a la pantalla anterior (que debería ser el Dashboard)
+                Navigator.pop(context);
               },
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
-// TARJETA DE PRODUCTO (Igual que antes)
-class _ProductCard extends StatelessWidget {
-  final Product product;
-  final bool isAdmin;
+          if (_isAdmin) Divider(), // Separador visual
 
-  const _ProductCard({required this.product, required this.isAdmin});
-
-  @override
-  Widget build(BuildContext context) {
-    final cart = Provider.of<CartProvider>(
-      context,
-      listen: false,
-    ); // Optimización
-
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProductDetailScreen(product: product),
-        ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CustomImage(
-                      imageUrl: product.images.isNotEmpty
-                          ? product.images[0]
-                          : '',
-                      borderRadius: 20,
-                    ),
-                  ),
-                  if (isAdmin)
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: Colors.white,
-                            radius: 16,
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.edit,
-                                size: 16,
-                                color: Colors.blue,
-                              ),
-                              onPressed: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      AdminScreen(productToEdit: product),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          CircleAvatar(
-                            backgroundColor: Colors.white,
-                            radius: 16,
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
-                                Icons.delete,
-                                size: 16,
-                                color: Colors.red,
-                              ),
-                              onPressed: () => _confirmDelete(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "\$${product.price.toStringAsFixed(0)}",
-                        style: const TextStyle(
-                          color: Colors.pink,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      if (!isAdmin)
-                        GestureDetector(
-                          onTap: () {
-                            cart.addItem(product);
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("Agregado +1"),
-                                duration: Duration(milliseconds: 500),
-                              ),
-                            );
-                          },
-                          child: const Icon(
-                            Icons.add_circle,
-                            color: Colors.black,
-                            size: 28,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("¿Eliminar Producto?"),
-        content: Text("Estás a punto de borrar '${product.name}'."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancelar"),
-          ),
-          TextButton(
-            onPressed: () async {
-              await FirebaseFirestore.instance
-                  .collection('products')
-                  .doc(product.id)
-                  .delete();
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Producto eliminado")),
-              );
+          ListTile(
+            leading: Icon(Icons.history),
+            title: Text('Mis Pedidos (Prueba)'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => OrdersScreen()));
             },
-            child: const Text("ELIMINAR", style: TextStyle(color: Colors.red)),
           ),
+          ListTile(
+              leading: Icon(Icons.logout, color: Colors.red),
+              title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                await AuthService().signOut();
+
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => LoginScreen()),
+                  (route) => false,
+                );
+              }),
         ],
       ),
     );

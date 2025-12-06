@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_credit_card/flutter_credit_card.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/cart_provider.dart';
+import '../services/auth_service.dart';
 
 class PaymentScreen extends StatefulWidget {
-  final double totalAmount;
-
-  const PaymentScreen({super.key, required this.totalAmount});
-
   @override
-  State<PaymentScreen> createState() => _PaymentScreenState();
+  _PaymentScreenState createState() => _PaymentScreenState();
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
@@ -21,27 +16,77 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String cvvCode = '';
   bool isCvvFocused = false;
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-  bool _isProcessing = false;
+  bool _isLoading = false;
+
+  void _onCreditCardModelChange(CreditCardModel? creditCardModel) {
+    setState(() {
+      cardNumber = creditCardModel!.cardNumber;
+      expiryDate = creditCardModel.expiryDate;
+      cardHolderName = creditCardModel.cardHolderName;
+      cvvCode = creditCardModel.cvvCode;
+      isCvvFocused = creditCardModel.isCvvFocused;
+    });
+  }
+
+  // ESTA ES LA FUNCIÓN QUE PROCESA EL PEDIDO REALMENTE
+  void _processPayment() async {
+    if (!formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Validación visual básica de tarjeta (simulada)
+    if (cardNumber.length < 16 || cvvCode.length < 3) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Datos de tarjeta inválidos")));
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final cart = Provider.of<CartProvider>(context, listen: false);
+      final user = AuthService().currentUser;
+
+      if (user == null) throw Exception("Usuario no identificado");
+
+      // 1. LLAMAMOS A LA TRANSACCIÓN SEGURA (STOCK)
+      await cart.placeOrder(user.uid);
+
+      // 2. ÉXITO
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text("¡Pago aprobado y Pedido creado!"),
+            backgroundColor: Colors.green),
+      );
+
+      // Regresar hasta el Home (borrando carrito y pago del historial)
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (e) {
+      // 3. ERROR (STOCK O RED)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error: ${e.toString().replaceAll("Exception:", "")}"),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cart = Provider.of<CartProvider>(context, listen: false);
+
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        title: const Text("Pago Seguro"),
-        backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.black),
-        elevation: 0,
-        titleTextStyle: const TextStyle(
-          color: Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 18,
-        ),
-      ),
+      appBar: AppBar(title: Text("Pago Seguro")),
       body: SafeArea(
         child: Column(
           children: [
-            // TARJETA VISUAL ANIMADA
+            // TARJETA VISUAL
             CreditCardWidget(
               cardNumber: cardNumber,
               expiryDate: expiryDate,
@@ -51,18 +96,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
               obscureCardNumber: true,
               obscureCardCvv: true,
               isHolderNameVisible: true,
-              cardBgColor: Colors.black87,
-              isSwipeGestureEnabled: true,
-              onCreditCardWidgetChange: (CreditCardBrand creditCardBrand) {},
+              cardBgColor: Colors.deepPurple,
+              onCreditCardWidgetChange: (CreditCardBrand brand) {},
             ),
 
+            // FORMULARIO
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    // FORMULARIO SIMPLIFICADO (Sin parámetros conflictivos)
                     CreditCardForm(
                       formKey: formKey,
+                      onCreditCardModelChange: _onCreditCardModelChange,
                       obscureCvv: true,
                       obscureNumber: true,
                       cardNumber: cardNumber,
@@ -72,23 +117,50 @@ class _PaymentScreenState extends State<PaymentScreen> {
                       isExpiryDateVisible: true,
                       cardHolderName: cardHolderName,
                       expiryDate: expiryDate,
-                      // Eliminamos themeColor, textColor y decorations personalizados
-                      // para usar los estilos por defecto de la nueva versión y evitar errores.
-                      onCreditCardModelChange:
-                          (CreditCardModel? creditCardModel) {
-                        setState(() {
-                          cardNumber = creditCardModel!.cardNumber;
-                          expiryDate = creditCardModel.expiryDate;
-                          cardHolderName = creditCardModel.cardHolderName;
-                          cvvCode = creditCardModel.cvvCode;
-                          isCvvFocused = creditCardModel.isCvvFocused;
-                        });
-                      },
+                      inputConfiguration: InputConfiguration(
+                        cardNumberDecoration: InputDecoration(
+                          labelText: 'Número',
+                          hintText: 'XXXX XXXX XXXX XXXX',
+                          border: OutlineInputBorder(),
+                        ),
+                        expiryDateDecoration: InputDecoration(
+                          labelText: 'Vence',
+                          hintText: 'XX/XX',
+                          border: OutlineInputBorder(),
+                        ),
+                        cvvCodeDecoration: InputDecoration(
+                          labelText: 'CVV',
+                          hintText: 'XXX',
+                          border: OutlineInputBorder(),
+                        ),
+                        cardHolderDecoration: InputDecoration(
+                          labelText: 'Titular',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
                     ),
+                    SizedBox(height: 20),
 
-                    const SizedBox(height: 20),
+                    // RESUMEN DE PAGO
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Total a Pagar:",
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text("\$${cart.totalAmount.toStringAsFixed(0)}",
+                              style: TextStyle(
+                                  fontSize: 22,
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 20),
 
-                    // BOTÓN DE PAGO CON LÓGICA DE FIREBASE
+                    // BOTÓN PAGAR
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: SizedBox(
@@ -96,31 +168,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         height: 50,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.pink,
+                            backgroundColor: Colors.green,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                                borderRadius: BorderRadius.circular(10)),
                           ),
-                          onPressed: _isProcessing ? null : _onValidate,
-                          child: _isProcessing
-                              ? const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircularProgressIndicator(
-                                      color: Colors.white,
-                                    ),
-                                    SizedBox(width: 10),
-                                    Text("Procesando..."),
-                                  ],
-                                )
-                              : const Text(
-                                  'PAGAR AHORA',
+                          onPressed: _isLoading ? null : _processPayment,
+                          child: _isLoading
+                              ? CircularProgressIndicator(color: Colors.white)
+                              : Text("PAGAR AHORA",
                                   style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ),
@@ -132,111 +190,5 @@ class _PaymentScreenState extends State<PaymentScreen> {
         ),
       ),
     );
-  }
-
-  void _onValidate() async {
-    if (formKey.currentState!.validate()) {
-      setState(() => _isProcessing = true);
-
-      // 1. SIMULACIÓN DE TIEMPO BANCARIO (3 segundos)
-      await Future.delayed(const Duration(seconds: 3));
-
-      // 2. GUARDAR ORDEN EN FIREBASE
-      if (!mounted) return;
-      await _saveOrderToFirebase();
-    } else {
-      // Usamos debugPrint en lugar de print para producción
-      debugPrint('Formulario inválido');
-    }
-  }
-
-  Future<void> _saveOrderToFirebase() async {
-    final cart = Provider.of<CartProvider>(context, listen: false);
-    final user = FirebaseAuth.instance.currentUser;
-    final products = cart.productDetails;
-
-    try {
-      // INICIO DEL BATCH (Lote de operaciones)
-      // Usamos 'WriteBatch' para que todo ocurra al mismo tiempo o falle todo junto (Seguridad transaccional)
-      final batch = FirebaseFirestore.instance.batch();
-
-      final List<Map<String, dynamic>> orderItems = [];
-
-      cart.items.forEach((productId, quantity) {
-        if (products.containsKey(productId)) {
-          final product = products[productId]!;
-
-          // 1. Preparar datos del pedido
-          orderItems.add({
-            'productId': productId,
-            'name': product.name,
-            'price': product.price,
-            'quantity': quantity,
-            'image': product.images.isNotEmpty ? product.images[0] : '',
-          });
-
-          // 2. AGREGAR OPERACIÓN DE RESTA DE STOCK AL LOTE
-          // Buscamos la referencia del producto en la BD
-          final productRef =
-              FirebaseFirestore.instance.collection('products').doc(productId);
-
-          // Le decimos a Firebase: "Resta la cantidad que se compró"
-          batch.update(productRef, {
-            'stock': FieldValue.increment(
-                -quantity) // Magia de Firebase: decremento atómico
-          });
-        }
-      });
-
-      // 3. Crear el documento del pedido
-      final orderRef = FirebaseFirestore.instance.collection('orders').doc();
-      final orderData = {
-        'userId': user!.uid,
-        'userEmail': user.email,
-        'totalAmount': widget.totalAmount,
-        'status': 'Pagado',
-        'paymentMethod':
-            'Tarjeta ${cardNumber.length >= 4 ? cardNumber.substring(cardNumber.length - 4) : '****'}',
-        'createdAt': FieldValue.serverTimestamp(),
-        'items': orderItems,
-      };
-
-      // Agregamos el guardado del pedido al lote
-      batch.set(orderRef, orderData);
-
-      // 4. EJECUTAR TODO EL LOTE (Commit)
-      await batch.commit();
-
-      // Limpiar carrito
-      cart.clearCart();
-
-      if (!mounted) return;
-
-      // ÉXITO
-      showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-                icon: const Icon(Icons.check_circle,
-                    color: Colors.green, size: 60),
-                title: const Text("¡Pago Exitoso!"),
-                content: const Text(
-                    "Tu inventario se ha actualizado y el pedido ha sido registrado."),
-                actions: [
-                  TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                      child: const Text("Aceptar"))
-                ],
-              ));
-    } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
   }
 }

@@ -2,222 +2,237 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product_model.dart';
 import '../providers/cart_provider.dart';
+import 'admin_screen.dart'; // Importamos para poder ir a editar
 
 class ProductDetailScreen extends StatelessWidget {
   final Product product;
+  final bool isAdmin; // <--- ESTO ES LO QUE FALTABA
 
-  const ProductDetailScreen({Key? key, required this.product})
-    : super(key: key);
+  const ProductDetailScreen(
+      {Key? key,
+      required this.product,
+      this.isAdmin = false // Por defecto es falso si no se especifica
+      })
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final cart = Provider.of<CartProvider>(context, listen: false);
+    final bool isAvailable = product.stock > 0;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      extendBodyBehindAppBar: true, // La imagen sube hasta el techo
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // BOTÓN DE ATRÁS PERSONALIZADO (VISIBLE SIEMPRE)
-        leading: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: CircleAvatar(
-            backgroundColor: Colors.white,
-            child: IconButton(
-              icon: Icon(Icons.arrow_back, color: Colors.black),
-              onPressed: () => Navigator.pop(context),
-            ),
+        leading: Container(
+          margin: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5), shape: BoxShape.circle),
+          child: IconButton(
+            icon: Icon(Icons.arrow_back, color: Colors.black),
+            onPressed: () => Navigator.pop(context),
           ),
         ),
       ),
-      // BOTÓN DE COMPRA MEJORADO
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          cart.addItem(product);
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text("Agregado al carrito"),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
-        },
-        label: Text(
-          "AGREGAR AL CARRITO",
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
-        ),
-        icon: Icon(Icons.shopping_bag_outlined),
-        backgroundColor: Colors.pink,
-        foregroundColor: Colors.white, // TEXTO BLANCO SIEMPRE
-        elevation: 4,
-      ),
+      // BOTÓN FLOTANTE DE EDICIÓN (SOLO PARA ADMIN)
+      floatingActionButton: isAdmin
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                // Navegar a la pantalla de edición
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminScreen(productToEdit: product),
+                  ),
+                );
+              },
+              label: Text("Editar Piñata"),
+              icon: Icon(Icons.edit),
+              backgroundColor: Colors.blue,
+            )
+          : null,
+
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // IMAGEN
-            GestureDetector(
-              onTap: () {
-                if (product.images.isNotEmpty) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          _FullScreenImage(imageUrl: product.images[0]),
-                    ),
-                  );
-                }
-              },
-              child: Hero(
-                tag: product.id,
-                child: Container(
-                  height: 400, // Más alta para lucir la foto
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(40),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 20,
-                        offset: Offset(0, 10),
-                      ),
-                    ],
+            // IMAGEN GRANDE
+            Container(
+              height: 400,
+              width: double.infinity,
+              color: Colors.white,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: product.images.isNotEmpty
+                        ? Image.network(product.images.first, fit: BoxFit.cover)
+                        : Icon(Icons.image_not_supported,
+                            size: 100, color: Colors.grey),
                   ),
-                  child: product.images.isNotEmpty
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.vertical(
-                            bottom: Radius.circular(40),
-                          ),
-                          child: Image.network(
-                            product.images[0],
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : Icon(
-                          Icons.celebration,
-                          size: 100,
-                          color: Colors.pink[100],
+                  // Sombra inferior para que se lea el texto
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Colors.white, Colors.white.withOpacity(0.0)],
                         ),
-                ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Precios y Stock
-                  Row(
-                    children: [
-                      Text(
-                        "\$${product.price}",
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.pink,
-                        ),
-                      ),
-                      Spacer(),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: product.stock > 0
-                              ? Colors.green[50]
-                              : Colors.red[50],
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color: product.stock > 0
-                                ? Colors.green.withOpacity(0.3)
-                                : Colors.red.withOpacity(0.3),
+            // DETALLES
+            Transform.translate(
+              offset: Offset(0, -40), // Subir un poco el contenido
+              child: Container(
+                padding: EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.name,
+                            style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                height: 1.1),
                           ),
                         ),
-                        child: Text(
-                          product.stock > 0 ? "Disponible" : "Agotado",
+                        Text(
+                          "\$${product.price.toStringAsFixed(0)}",
                           style: TextStyle(
-                            color: product.stock > 0
-                                ? Colors.green[700]
-                                : Colors.red[700],
-                            fontWeight: FontWeight.bold,
+                              fontSize: 28,
+                              color: Theme.of(context).primaryColor,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 15),
+
+                    // STOCK
+                    Row(
+                      children: [
+                        Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color:
+                                isAvailable ? Colors.green[50] : Colors.red[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: isAvailable ? Colors.green : Colors.red,
+                                width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                  isAvailable
+                                      ? Icons.check_circle
+                                      : Icons.cancel,
+                                  size: 16,
+                                  color:
+                                      isAvailable ? Colors.green : Colors.red),
+                              SizedBox(width: 5),
+                              Text(
+                                isAvailable
+                                    ? "En Stock: ${product.stock}"
+                                    : "Agotado",
+                                style: TextStyle(
+                                    color: isAvailable
+                                        ? Colors.green[800]
+                                        : Colors.red[800],
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 20),
-
-                  Text(
-                    product.name,
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[900],
+                      ],
                     ),
-                  ),
-                  SizedBox(height: 16),
 
-                  Divider(),
-                  SizedBox(height: 16),
-
-                  Text(
-                    "Detalles",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
+                    SizedBox(height: 25),
+                    Text("Descripción",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 10),
+                    Text(
+                      product.description,
+                      style: TextStyle(
+                          color: Colors.grey[600], height: 1.6, fontSize: 16),
                     ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    product.description.isNotEmpty
-                        ? product.description
-                        : "Este producto es ideal para darle vida a tu fiesta. Hecho con los mejores materiales.",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                      height: 1.6,
-                    ),
-                  ),
-                  SizedBox(height: 100),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _FullScreenImage extends StatelessWidget {
-  final String imageUrl;
-  const _FullScreenImage({required this.imageUrl});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        iconTheme: IconThemeData(color: Colors.white),
-      ),
-      body: Center(child: InteractiveViewer(child: Image.network(imageUrl))),
+      bottomNavigationBar: !isAdmin
+          ? Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      offset: Offset(0, -5))
+                ],
+              ),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isAvailable
+                      ? Theme.of(context).primaryColor
+                      : Colors.grey,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                ),
+                onPressed: isAvailable
+                    ? () {
+                        Provider.of<CartProvider>(context, listen: false)
+                            .addItem(product);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text("¡Agregado al carrito!"),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 1)),
+                        );
+                      }
+                    : null,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.shopping_bag_outlined, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text(
+                      isAvailable ? "Agregar al Carrito" : "No disponible",
+                      style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : SizedBox(), // Si es admin, no mostramos el botón de comprar, sino el flotante de editar
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import 'auth_wrapper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,7 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _isLogin = true;
 
-  // --- NUEVA FUNCIÓN: RECUPERAR CONTRASEÑA ---
+  // RECUPERAR CONTRASEÑA ---
   void _resetPassword() async {
     if (_emailController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -63,32 +64,65 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Por favor llena todos los campos")),
-      );
+          const SnackBar(content: Text("Por favor llena todos los campos")));
       return;
     }
 
     if (_isLogin) {
       error = await _auth.signIn(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+          _emailController.text.trim(), _passwordController.text.trim());
     } else {
-      error = await _auth.signUp(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-        "Usuario Nuevo",
-      );
+      error = await _auth.signUp(_emailController.text.trim(),
+          _passwordController.text.trim(), "Usuario Nuevo");
     }
 
-    // Verificamos si el widget sigue vivo antes de usar context
     if (!mounted) return;
 
     setState(() => _isLoading = false);
 
     if (error != null) {
+      // Si hubo error, lo mostramos y nos quedamos aquí
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
+          SnackBar(content: Text(error), backgroundColor: Colors.red));
+    } else {
+      // --- 2. AQUÍ ESTÁ EL ARREGLO ---
+      // Si NO hubo error (éxito), forzamos la navegación al Portero (AuthWrapper)
+      // para que él decida si mandarnos al Home o al Dashboard.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => AuthWrapper()),
+        (route) => false,
+      );
+    }
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Por favor llena todos los campos")));
+      return;
+    }
+
+    if (_isLogin) {
+      error = await _auth.signIn(
+          _emailController.text.trim(), _passwordController.text.trim());
+    } else {
+      error = await _auth.signUp(_emailController.text.trim(),
+          _passwordController.text.trim(), "Usuario Nuevo");
+    }
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (error != null) {
+      // Si hubo error, lo mostramos y nos quedamos aquí
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: Colors.red));
+    } else {
+      // --- 2. AQUÍ ESTÁ EL ARREGLO ---
+      // Si NO hubo error (éxito), forzamos la navegación al Portero (AuthWrapper)
+      // para que él decida si mandarnos al Home o al Dashboard.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => AuthWrapper()),
+        (route) => false,
       );
     }
   }
@@ -103,8 +137,17 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.celebration, size: 80, color: Colors.pink),
-              const SizedBox(height: 20),
+              Container(
+                height: 150,
+                child: Image.asset(
+                  'assets/logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(Icons.image_not_supported,
+                        size: 80, color: Colors.grey);
+                  },
+                ),
+              ),
               const Text(
                 "R Piñatas",
                 style: TextStyle(
