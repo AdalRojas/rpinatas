@@ -146,17 +146,29 @@ class _ActionTile extends StatelessWidget {
               child: Icon(icon, color: color, size: 28),
             ),
             SizedBox(width: 15),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(subtitle,
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize:
+                            16), // Aumenté el tamaño a 16 para que se vea mejor
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    // --- CORRECCIÓN AQUÍ ---
+                    maxLines: 2, // Ahora está DENTRO del Text
+                    overflow:
+                        TextOverflow.ellipsis, // Ahora está DENTRO del Text
+                  ),
+                ],
+              ),
             ),
-            Spacer(),
+            SizedBox(width: 10),
             Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[300]),
           ],
         ),
