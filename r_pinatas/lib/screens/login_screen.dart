@@ -1,129 +1,140 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import 'auth_wrapper.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  _LoginScreenState createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _passController = TextEditingController();
+  // 1. NUEVO CONTROLADOR PARA EL NOMBRE
+  final _nameController = TextEditingController();
+
   final AuthService _auth = AuthService();
   bool _isLoading = false;
   bool _isLogin = true;
 
-  // RECUPERAR CONTRASEÑA ---
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passController.dispose();
+    _nameController.dispose(); // Limpiamos el nuevo controlador
+    super.dispose();
+  }
+
+  void _submit() async {
+    // 1. OCULTAR TECLADO (Para que no tape el mensaje de error)
+    FocusScope.of(context).unfocus();
+
+    // Validación básica de campos vacíos
+    if (_emailController.text.trim().isEmpty ||
+        _passController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Escribe correo y contraseña"),
+          backgroundColor: Colors.orange));
+      return;
+    }
+
+    // 2. VALIDAR QUE ESCRIBIÓ EL NOMBRE (SOLO EN REGISTRO)
+    if (!_isLogin && _nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Por favor escribe tu nombre"),
+          backgroundColor: Colors.orange));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // DEBUG: Ver qué está pasando
+    print("Enviando a Firebase... Correo: ${_emailController.text}");
+
+    String? error;
+    try {
+      if (_isLogin) {
+        // LOGIN
+        error = await _auth.signIn(
+          _emailController.text.trim(),
+          _passController.text.trim(),
+        );
+      } else {
+        // REGISTRO
+        error = await _auth.signUp(
+            _emailController.text.trim(),
+            _passController.text.trim(),
+            _nameController.text.trim() // <--- 3. AQUÍ MANDAMOS EL NOMBRE REAL
+            );
+      }
+    } catch (e) {
+      error = "Excepción no controlada: $e";
+    }
+
+    // DEBUG: Ver si regresó error
+    print("Resultado de Firebase (Error): $error");
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (error != null) {
+      // Manejo de errores traducidos
+      String message = "Ocurrió un error";
+
+      if (error.contains('email-already-in-use')) {
+        message = "¡ALTO! Este correo YA existe. Intenta iniciar sesión.";
+      } else if (error.contains('user-not-found') ||
+          error.contains('INVALID_LOGIN_CREDENTIALS')) {
+        message = "Credenciales incorrectas.";
+      } else if (error.contains('wrong-password')) {
+        message = "Contraseña incorrecta.";
+      } else if (error.contains('weak-password')) {
+        message = "La contraseña es muy débil (mínimo 6 caracteres).";
+      } else if (error.contains('invalid-email')) {
+        message = "El correo no es válido.";
+      } else {
+        message = "Error del servidor: $error";
+      }
+
+      // Mostrar alerta
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 4),
+      ));
+    } else {
+      // Éxito -> Ir al AuthWrapper
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => AuthWrapper()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _toggleMode() {
+    setState(() {
+      _isLogin = !_isLogin;
+      _emailController.clear();
+      _passController.clear();
+      _nameController.clear(); // Limpiamos nombre también
+    });
+  }
+
   void _resetPassword() async {
     if (_emailController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Escribe tu correo para recuperar la contraseña"),
-        ),
-      );
+          SnackBar(content: Text("Escribe tu correo arriba primero")));
       return;
     }
-
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(
-        email: _emailController.text.trim(),
-      );
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Correo Enviado"),
-          content: Text(
-            "Hemos enviado un enlace de recuperación a ${_emailController.text}. Revisa tu bandeja.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Aceptar"),
-            ),
-          ],
-        ),
-      );
+      await _auth.sendPasswordResetEmail(_emailController.text.trim());
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Correo enviado. Revisa tu bandeja."),
+          backgroundColor: Colors.green));
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-  }
-  // -------------------------------------------
-
-  void _submit() async {
-    setState(() => _isLoading = true);
-    String? error;
-
-    // Pequeña validación local
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Por favor llena todos los campos")));
-      return;
-    }
-
-    if (_isLogin) {
-      error = await _auth.signIn(
-          _emailController.text.trim(), _passwordController.text.trim());
-    } else {
-      error = await _auth.signUp(_emailController.text.trim(),
-          _passwordController.text.trim(), "Usuario Nuevo");
-    }
-
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-
-    if (error != null) {
-      // Si hubo error, lo mostramos y nos quedamos aquí
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: Colors.red));
-    } else {
-      // --- 2. AQUÍ ESTÁ EL ARREGLO ---
-      // Si NO hubo error (éxito), forzamos la navegación al Portero (AuthWrapper)
-      // para que él decida si mandarnos al Home o al Dashboard.
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => AuthWrapper()),
-        (route) => false,
-      );
-    }
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Por favor llena todos los campos")));
-      return;
-    }
-
-    if (_isLogin) {
-      error = await _auth.signIn(
-          _emailController.text.trim(), _passwordController.text.trim());
-    } else {
-      error = await _auth.signUp(_emailController.text.trim(),
-          _passwordController.text.trim(), "Usuario Nuevo");
-    }
-
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-
-    if (error != null) {
-      // Si hubo error, lo mostramos y nos quedamos aquí
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: Colors.red));
-    } else {
-      // --- 2. AQUÍ ESTÁ EL ARREGLO ---
-      // Si NO hubo error (éxito), forzamos la navegación al Portero (AuthWrapper)
-      // para que él decida si mandarnos al Home o al Dashboard.
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => AuthWrapper()),
-        (route) => false,
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Error al enviar correo"),
+          backgroundColor: Colors.red));
     }
   }
 
@@ -133,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -142,97 +153,94 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Image.asset(
                   'assets/logo.png',
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Icon(Icons.image_not_supported,
-                        size: 80, color: Colors.grey);
-                  },
+                  errorBuilder: (ctx, err, stack) =>
+                      Icon(Icons.person_pin, size: 100, color: Colors.pink),
                 ),
               ),
-              const Text(
-                "R Piñatas",
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.pink,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _isLogin ? "Bienvenido de nuevo" : "Crea tu cuenta",
-                style: const TextStyle(color: Colors.grey),
-              ),
+              SizedBox(height: 30),
+              Text(_isLogin ? "Bienvenido de nuevo" : "Crear Cuenta",
+                  style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).primaryColor)),
+              SizedBox(height: 20),
 
-              const SizedBox(height: 40),
+              // 4. CAMPO DE NOMBRE (SOLO VISIBLE EN REGISTRO)
+              if (!_isLogin) ...[
+                TextField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    labelText: "Nombre Completo",
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                ),
+                SizedBox(height: 15),
+              ],
 
               TextField(
                 controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Correo Electrónico",
-                  prefixIcon: Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: Icon(Icons.email),
                 ),
+                keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 16),
-
+              SizedBox(height: 15),
               TextField(
-                controller: _passwordController,
+                controller: _passController,
                 obscureText: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: "Contraseña",
-                  prefixIcon: Icon(Icons.lock_outline),
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: Icon(Icons.lock),
                 ),
               ),
 
-              // --- BOTÓN OLVIDÉ CONTRASEÑA (Solo en Login) ---
               if (_isLogin)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: _resetPassword,
-                    child: const Text(
-                      "¿Olvidaste tu contraseña?",
-                      style: TextStyle(color: Colors.pink),
-                    ),
+                    child: Text("¿Olvidaste tu contraseña?"),
                   ),
                 ),
 
-              // -----------------------------------------------
-              const SizedBox(height: 24),
+              SizedBox(height: 25),
 
-              _isLoading
-                  ? const CircularProgressIndicator()
-                  : SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _submit,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.pink,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: Text(
-                          _isLogin ? "INGRESAR" : "REGISTRARSE",
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white),
+                  child: _isLoading
+                      ? CircularProgressIndicator(color: Colors.white)
+                      : Text(_isLogin ? "INGRESAR" : "CREAR CUENTA",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
 
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_isLogin ? "¿No tienes cuenta?" : "¿Ya tienes cuenta?"),
-                  TextButton(
-                    onPressed: () => setState(() => _isLogin = !_isLogin),
-                    child: Text(_isLogin ? "Regístrate aquí" : "Inicia sesión"),
-                  ),
-                ],
+              TextButton(
+                onPressed: _toggleMode,
+                child: Text(
+                  _isLogin
+                      ? "¿No tienes cuenta? Regístrate"
+                      : "¿Ya tienes cuenta? Ingresa",
+                  style: TextStyle(fontSize: 16),
+                ),
               ),
             ],
           ),

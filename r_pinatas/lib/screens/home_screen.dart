@@ -8,7 +8,7 @@ import 'product_detail_screen.dart';
 import 'cart_screen.dart';
 import 'orders_screen.dart';
 import 'admin_screen.dart';
-import 'admin_dashboard_screen.dart'; // <--- IMPORT NUEVO PARA PODER REGRESAR
+import 'admin_dashboard_screen.dart'; // <--- IMPORT PARA PODER REGRESAR
 import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {

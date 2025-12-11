@@ -3,10 +3,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class AdminOrdersScreen extends StatelessWidget {
+  final List<String> validStatuses = [
+    "Pedido en Revisión",
+    "Pedido Autorizado (Pagado)",
+    "En proceso",
+    "Entregado",
+    "Pedido Rechazado"
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Pedidos de Clientes")),
+      backgroundColor: Color(0xFFF5F5F7),
+      appBar: AppBar(title: Text("Lista Detallada de Pedidos")),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('orders')
@@ -19,52 +28,78 @@ class AdminOrdersScreen extends StatelessWidget {
             return Center(child: Text("No hay pedidos aún"));
 
           return ListView.builder(
-            padding: EdgeInsets.all(10),
+            padding: EdgeInsets.all(12),
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (ctx, i) {
               final doc = snapshot.data!.docs[i];
               final data = doc.data() as Map<String, dynamic>;
-              final status = data['status'] ?? 'Pendiente';
+
+              final clientName = data['clientName'] ?? 'Cliente (Sin Nombre)';
+              String currentStatus = data['status'] ?? 'Pedido en Revisión';
+              if (currentStatus == 'Pendiente')
+                currentStatus = 'Pedido en Revisión';
+
+              final total = (data['totalAmount'] ?? 0).toDouble();
 
               DateTime? date;
               if (data['createdAt'] != null)
                 date = (data['createdAt'] as Timestamp).toDate();
 
               return Card(
-                margin: EdgeInsets.only(bottom: 10),
+                elevation: 3,
+                margin: EdgeInsets.only(bottom: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: ExpansionTile(
-                  title: Text(
-                    "Orden #${doc.id.substring(0, 5).toUpperCase()}",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        _getStatusColor(currentStatus).withOpacity(0.1),
+                    child: Icon(Icons.person,
+                        color: _getStatusColor(currentStatus)),
                   ),
-                  subtitle: Text(
-                    "${date != null ? DateFormat('dd/MM HH:mm').format(date) : ''} - \$${(data['totalAmount'] ?? 0).toString()}",
-                    style: TextStyle(color: Colors.grey[600]),
+                  title: Text(
+                    clientName,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Total: \$${total.toStringAsFixed(0)}"),
+                      Text(
+                        date != null
+                            ? DateFormat('dd/MM/yyyy HH:mm').format(date)
+                            : '',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
                   ),
                   trailing: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                        color: _getStatusColor(status),
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Text(status,
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
+                      color: _getStatusColor(currentStatus),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _getShortStatus(currentStatus),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold),
+                    ),
                   ),
                   children: [
                     Divider(),
-                    // LISTA DE PRODUCTOS (Híbrida)
+
                     Padding(
-                      padding: EdgeInsets.all(10),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text("Productos:",
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 16)),
-                          SizedBox(height: 5),
-                          // Usamos la función inteligente aquí
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[700])),
                           if (data['items'] != null)
                             ..._buildOrderItems(data['items']),
                         ],
@@ -73,37 +108,66 @@ class AdminOrdersScreen extends StatelessWidget {
 
                     Divider(),
 
-                    // BOTONES DE ACCIÓN
+                    // --- SECCIÓN CORREGIDA (NO MÁS OVERFLOW) ---
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 10.0, right: 10.0),
+                      padding: EdgeInsets.all(16),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                        // Eliminamos mainAxisAlignment: spaceBetween para controlar mejor el espacio
                         children: [
-                          if (status != 'Pendiente')
-                            TextButton(
-                                onPressed: () {
-                                  FirebaseFirestore.instance
-                                      .collection('orders')
-                                      .doc(doc.id)
-                                      .update({'status': 'Pendiente'});
-                                },
-                                child: Text("Marcar Pendiente",
-                                    style: TextStyle(color: Colors.orange))),
-                          SizedBox(width: 10),
-                          if (status != 'Entregado')
-                            ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
+                          Text("Cambiar Estado:",
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          SizedBox(width: 10), // Un pequeño espacio
+
+                          // USAMOS EXPANDED: "Ocupa todo el espacio restante, pero no más"
+                          Expanded(
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey[300]!),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  isExpanded:
+                                      true, // <--- CLAVE: Ajustar texto al ancho disponible
+                                  value: validStatuses.contains(currentStatus)
+                                      ? currentStatus
+                                      : null,
+                                  hint: Text("Seleccionar"),
+                                  items: validStatuses.map((String status) {
+                                    return DropdownMenuItem<String>(
+                                      value: status,
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.circle,
+                                              size: 10,
+                                              color: _getStatusColor(status)),
+                                          SizedBox(width: 8),
+                                          // Usamos Flexible para que el texto se corte si es muy largo
+                                          Flexible(
+                                            child: Text(
+                                              status,
+                                              style: TextStyle(fontSize: 13),
+                                              overflow: TextOverflow
+                                                  .ellipsis, // <--- CLAVE: Puntos suspensivos
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newStatus) {
+                                    if (newStatus != null) {
+                                      FirebaseFirestore.instance
+                                          .collection('orders')
+                                          .doc(doc.id)
+                                          .update({'status': newStatus});
+                                    }
+                                  },
                                 ),
-                                onPressed: () {
-                                  FirebaseFirestore.instance
-                                      .collection('orders')
-                                      .doc(doc.id)
-                                      .update({'status': 'Entregado'});
-                                },
-                                icon: Icon(Icons.check, size: 18),
-                                label: Text("Entregar")),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     )
@@ -119,29 +183,36 @@ class AdminOrdersScreen extends StatelessWidget {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Entregado':
-        return Colors.green;
-      case 'Pendiente':
+      case "Pedido en Revisión":
         return Colors.orange;
-      case 'Cancelado':
+      case "Pedido Autorizado (Pagado)":
+        return Colors.blue;
+      case "En proceso":
+        return Colors.purple;
+      case "Entregado":
+        return Colors.green;
+      case "Pedido Rechazado":
         return Colors.red;
       default:
         return Colors.grey;
     }
   }
 
-  // --- FUNCIÓN INTELIGENTE (COPIADA DE ORDERS_SCREEN) ---
+  String _getShortStatus(String status) {
+    if (status.contains("Autorizado")) return "Autorizado";
+    if (status.contains("Revisión")) return "Revisión";
+    return status;
+  }
+
   List<Widget> _buildOrderItems(dynamic items) {
     List<Widget> widgets = [];
     try {
       if (items is Map) {
-        // CASO A: Mapa (Formato Nuevo)
         items.forEach((key, value) {
           final itemData = value as Map<String, dynamic>;
           widgets.add(_buildSingleItemText(itemData));
         });
       } else if (items is List) {
-        // CASO B: Lista (Formato Antiguo)
         for (var item in items) {
           if (item is Map) {
             widgets.add(_buildSingleItemText(Map<String, dynamic>.from(item)));
@@ -149,8 +220,7 @@ class AdminOrdersScreen extends StatelessWidget {
         }
       }
     } catch (e) {
-      widgets.add(Text("Error visualizando items: $e",
-          style: TextStyle(color: Colors.red)));
+      widgets.add(Text("Error items"));
     }
     return widgets;
   }
@@ -160,16 +230,15 @@ class AdminOrdersScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Row(
         children: [
-          Icon(Icons.arrow_right, size: 16, color: Colors.grey),
+          Text("• ", style: TextStyle(color: Colors.grey)),
           Text(
             "${item['quantity']}x ",
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: Colors.deepPurple),
+            style:
+                TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
           ),
           Expanded(
             child: Text(
               item['name'] ?? 'Producto',
-              style: TextStyle(fontSize: 14),
               overflow: TextOverflow.ellipsis,
             ),
           ),

@@ -4,12 +4,11 @@ import 'package:flutter/foundation.dart';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    // HEMOS QUITADO EL IF/ELSE PARA QUE FUNCIONE EN WEB (CHROME) Y ANDROID
     return android;
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    // 1. TU API KEY REAL (Sacada de tu captura):
+    // 1. API KEY REAL
     apiKey: 'AIzaSyBUoFRDQzx6_O5Zqchx78H15qdr9itc_cU',
 
     // 2. TU APP ID REAL:

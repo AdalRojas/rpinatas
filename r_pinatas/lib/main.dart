@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'providers/cart_provider.dart';
-import 'screens/auth_wrapper.dart'; // <--- IMPORT NUEVO
+import 'screens/auth_wrapper.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -22,8 +22,8 @@ class RPinatasApp extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Color(0xFFCC2F6E),
-            primary: Color(0xFFCC2F6E),
+            seedColor: Color.fromARGB(255, 255, 238, 0),
+            primary: Color.fromARGB(255, 230, 14, 176),
             secondary: Color(0xFF3FAAA9),
             tertiary: Color(0xFFF1BA25),
             background: Color(0xFFF7FBF9),
@@ -31,7 +31,7 @@ class RPinatasApp extends StatelessWidget {
           ),
           scaffoldBackgroundColor: Color(0xFFF7FBF9),
           appBarTheme: AppBarTheme(
-            backgroundColor: Color(0xFFCC2F6E),
+            backgroundColor: Color.fromARGB(255, 29, 248, 0),
             foregroundColor: Colors.white,
             centerTitle: true,
           ),
@@ -42,7 +42,7 @@ class RPinatasApp extends StatelessWidget {
             ),
           ),
         ),
-        home: AuthWrapper(), // Usamos el widget importado
+        home: AuthWrapper(),
       ),
     );
   }

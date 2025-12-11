@@ -3,65 +3,67 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Stream para escuchar cambios de sesión en tiempo real
+  // Getter para saber si hay usuario activo (Stream)
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Obtener usuario actual
+  // Getter para obtener el usuario actual
   User? get currentUser => _auth.currentUser;
 
-  // LOGIN
+  // 1. INICIAR SESIÓN
   Future<String?> signIn(String email, String password) async {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       return null; // Null significa éxito
     } on FirebaseAuthException catch (e) {
-      return e.message ?? "Error desconocido en Login";
+      return e.code; // Devolvemos el código de error
     } catch (e) {
-      return "Error: $e";
+      return "Error desconocido: $e";
     }
   }
 
-  // REGISTRO
-  Future<String?> signUp(String email, String password, String name) async {
+  // 2. REGISTRARSE (ACTUALIZADO CON NOMBRE)
+  Future<String?> signUp(String email, String password, String fullName) async {
     try {
+      // Crear usuario en Auth (Google)
       UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+          email: email, password: password);
 
-      // Crear documento de usuario en Firestore
-      await _db.collection('users').doc(result.user!.uid).set({
+      // Guardar datos extra en Firestore (Base de datos)
+      await _firestore.collection('users').doc(result.user!.uid).set({
         'email': email,
-        'fullName': name,
         'role': 'client', // Por defecto todos son clientes
+        'fullName': fullName, // <--- AQUÍ GUARDAMOS EL NOMBRE
         'createdAt': FieldValue.serverTimestamp(),
       });
-      return null;
+
+      return null; // Éxito
     } on FirebaseAuthException catch (e) {
-      return e.message ?? "Error al registrarse";
+      return e.code;
+    } catch (e) {
+      return "Error desconocido: $e";
     }
   }
 
-  // CERRAR SESIÓN
+  // 3. CERRAR SESIÓN
   Future<void> signOut() async {
     await _auth.signOut();
   }
 
-  // --- NUEVA FUNCIÓN: OBTENER ROL ---
+  // 4. RECUPERAR CONTRASEÑA
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _auth.sendPasswordResetEmail(email: email);
+  }
+
+  // 5. OBTENER ROL DEL USUARIO
   Future<String> getUserRole() async {
     User? user = _auth.currentUser;
     if (user != null) {
-      try {
-        DocumentSnapshot doc =
-            await _db.collection('users').doc(user.uid).get();
-        if (doc.exists) {
-          // Devuelve el campo 'role' o 'client' si no existe
-          return doc.get('role') ?? 'client';
-        }
-      } catch (e) {
-        print("Error obteniendo rol: $e");
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        return doc['role'] ?? 'client';
       }
     }
     return 'client';

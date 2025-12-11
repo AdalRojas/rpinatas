@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/product_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class CartProvider extends ChangeNotifier {
-  // Mapa de ID -> Cantidad
-  final Map<String, int> _items = {};
-  // Mapa de ID -> Objeto Producto (para tener precio, nombre, etc.)
-  final Map<String, Product> _products = {};
+class CartProvider with ChangeNotifier {
+  Map<String, int> _items = {};
+  Map<String, Product> _products =
+      {}; // Cache local de productos para info rápida
 
   Map<String, int> get items => _items;
   Map<String, Product> get productDetails => _products;
 
-  // Total de artículos
   int get totalItems {
     int count = 0;
-    _items.forEach((key, quantity) => count += quantity);
+    _items.forEach((key, value) {
+      count += value;
+    });
     return count;
   }
 
-  // Monto total en dinero
   double get totalAmount {
     double total = 0.0;
     _items.forEach((key, quantity) {
@@ -29,26 +28,18 @@ class CartProvider extends ChangeNotifier {
     return total;
   }
 
-  // Agregar item con validación básica local
+  // Agregar producto al carrito
   void addItem(Product product) {
     if (_items.containsKey(product.id)) {
-      // Validamos visualmente que no se pase del stock que "conocemos"
-      if (_items[product.id]! < product.stock) {
-        _items.update(product.id, (existing) => existing + 1);
-      } else {
-        // Opcional: Podrías notificar aquí que se alcanzó el límite
-        print("Límite de stock alcanzado localmente");
-      }
+      _items.update(product.id, (existing) => existing + 1);
     } else {
-      if (product.stock > 0) {
-        _items.putIfAbsent(product.id, () => 1);
-        _products.putIfAbsent(product.id, () => product);
-      }
+      _items.putIfAbsent(product.id, () => 1);
+      _products.putIfAbsent(product.id, () => product);
     }
     notifyListeners();
   }
 
-  // Eliminar un solo item
+  // Quitar un solo ítem
   void removeSingleItem(String productId) {
     if (!_items.containsKey(productId)) return;
     if (_items[productId]! > 1) {
@@ -67,23 +58,37 @@ class CartProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Limpiar carrito
+  // Vaciar carrito
   void clearCart() {
-    _items.clear();
-    _products.clear();
+    _items = {};
+    _products = {};
     notifyListeners();
   }
 
-  // --- LÓGICA DE COMPRA SEGURA (TRANSACCIÓN) ---
-  // Retorna true si fue exitoso, lanza error si falla.
+  // --- AQUÍ ESTÁ LA LÓGICA DE COMPRA ---
   Future<void> placeOrder(String userId) async {
     final firestore = FirebaseFirestore.instance;
 
-    // Usamos runTransaction para asegurar operaciones atómicas
+    // Se usa runTransaction para asegurar que el stock no cambie mientras compramos
     await firestore.runTransaction((transaction) async {
       double calculatedTotal = 0.0;
 
-      // 1. LECTURA Y VALIDACIÓN
+      // 1. (NUEVO) BUSCAR EL NOMBRE DEL CLIENTE EN LA BASE DE DATOS
+      // Leemos el documento del usuario para sacar su 'fullName'
+      DocumentReference userRef = firestore.collection('users').doc(userId);
+      DocumentSnapshot userDoc = await transaction.get(userRef);
+
+      String clientName = "Cliente (Sin nombre)";
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        // Si tiene el campo fullName, lo usamos
+        if (userData.containsKey('fullName')) {
+          clientName = userData['fullName'];
+        }
+      }
+
+      // 2. VERIFICAR STOCK
       for (var entry in _items.entries) {
         String productId = entry.key;
         int quantityNeeded = entry.value;
@@ -93,23 +98,19 @@ class CartProvider extends ChangeNotifier {
         DocumentSnapshot productDoc = await transaction.get(productRef);
 
         if (!productDoc.exists) {
-          throw Exception("El producto ${productId} ya no existe.");
+          throw Exception("El producto ya no existe.");
         }
 
-        // Obtenemos el stock REAL actual de la base de datos
         int currentStock = productDoc.get('stock');
-        double price = (productDoc.get('price') ?? 0).toDouble();
-        String name = productDoc.get('name');
-
         if (currentStock < quantityNeeded) {
-          throw Exception(
-              "Lo sentimos, '$name' se agotó. Stock actual: $currentStock");
+          throw Exception("Stock insuficiente para: ${productDoc.get('name')}");
         }
 
+        double price = (productDoc.get('price') ?? 0).toDouble();
         calculatedTotal += price * quantityNeeded;
       }
 
-      // 2. ESCRITURA (Si pasamos la validación, descontamos stock)
+      // 3. ACTUALIZAR STOCK (Restar)
       for (var entry in _items.entries) {
         DocumentReference productRef =
             firestore.collection('products').doc(entry.key);
@@ -117,23 +118,24 @@ class CartProvider extends ChangeNotifier {
             .update(productRef, {'stock': FieldValue.increment(-entry.value)});
       }
 
-      // 3. CREAR LA ORDEN
+      // 4. CREAR LA ORDEN (CON EL NOMBRE CORRECTO)
       DocumentReference orderRef = firestore.collection('orders').doc();
+
       transaction.set(orderRef, {
         'userId': userId,
-        'amount': calculatedTotal,
-        'totalAmount': calculatedTotal, // Para compatibilidad con tu dashboard
+        'clientName': clientName,
+        'totalAmount': calculatedTotal,
         'items': _items.map((key, value) => MapEntry(key, {
               'quantity': value,
               'name': _products[key]?.name ?? 'Producto',
               'price': _products[key]?.price ?? 0,
             })),
-        'status': 'Pendiente',
+        'status': 'Pendiente', // Estado inicial
         'createdAt': FieldValue.serverTimestamp(),
       });
     });
 
-    // Si la transacción no falló, limpiamos el carrito local
+    // Si todo salió bien, vaciamos el carrito local
     clearCart();
   }
 }
